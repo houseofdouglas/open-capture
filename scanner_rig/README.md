@@ -15,7 +15,8 @@ shutter). One button press = one full revolution of evenly spaced photos.
 | (printed axle x3) | 3 | snap-in bearing axles — no rod/bolt needed |
 | M4 x 8 screws + nuts | 2 | motor ears, bolted through the hub (nut underneath) |
 | Zip ties | 2 | lash the ULN2003 board to a spoke |
-| M4 x 12 screws | 3 | 2 pivots + 1 angle-lock pin (self-tap into tray) |
+| M4 x 12 screws | 3 | 2 pivots + 1 angle-lock pin (self-tap into tray bosses) |
+| M4 x 12 screws | 4 | crossbars, through each wing into the bar ends (self-tap) |
 | M4 x 12 screws | 6 | roller brackets, up through the plate (self-tap into bracket feet) |
 | USB cable + 5 V supply | 1 | powers ESP32 and motor |
 | Cork or rubber sheet, ~175 mm disc | 1 | optional platter grip, glued to the top face |
@@ -25,6 +26,10 @@ shutter). One button press = one full revolution of evenly spaced photos.
 All parts print without supports. PLA or PETG, 3–4 walls, ~25% infill.
 PETG note: drive the self-tapping M4 screws slowly — PETG grips hard and
 can crack a boss if forced; the pilot holes are sized 3.6 mm for it.
+
+The wing is 238 x 312 mm, so print the two **one at a time** — they won't fit
+side by side on a 350 mm bed. Use a brim: it's a long, thin, flat PETG part and
+the corners are the most likely thing to lift.
 
 The base is a lightweight spoked frame (motor hub + bracket ring + 3 spokes
 + 3 feet) — about half the filament of a solid disc. Set `solid_base = true`
@@ -38,7 +43,11 @@ in `turntable.scad` if you'd rather have the fully enclosed disc + skirt.
 | `turntable.scad` | `axle` x3 (`stl/turntable_axle.stl`) | flange on the bed, tip up |
 | `turntable.scad` | `platter` | **upside down** (hub boss up) — or use `platter_print` / `stl/turntable_platter_print.stl`, which is pre-flipped |
 | `phone_cradle.scad` | `tray` | flat on its back |
-| `phone_cradle.scad` | `stand` | base down |
+| `phone_cradle.scad` | `wing` x2 (`stl/cradle_arc_wing.stl`) | flat (238 x 312 x 6) |
+| `phone_cradle.scad` | `crossbar` x2 (`stl/cradle_arc_crossbar.stl`) | flat |
+| `phone_cradle.scad` | `shim` x2 (`stl/cradle_arc_shim.stl`) | only for taller objects — see below |
+
+(`stand` is the older flat stand — superseded by the arc wings, see below.)
 | `header_pin_jig.scad` (`stl/header_pin_jig.stl`) | OPTIONAL: solder the ESP32-C3 SuperMini's header pins | flat on the bed |
 
 Export from the CLI: `openscad -o platter.stl -D 'part="platter"' turntable.scad`
@@ -65,9 +74,40 @@ Key parameters to check before printing:
   above the mounting flange (typically ~10 mm).
 - `phone_cradle.scad` → `fit` / `phone_t`: bump to ~2.0 / case thickness
   if the phone wears a case.
-- `phone_cradle.scad` → `pivot_h`: pivot height above the table; aim for
-  roughly the height of your object's center on the platter (platter
-  surface sits ~69 mm above the table).
+- `phone_cradle.scad` → `obj_h`: where the arc aims — the height of the object's
+  **centre** above the table, `69 + objectHeight/2`. Default 101 targets a 64 mm
+  object (the 2x sweet spot). **You don't need a wing per object size** — see
+  One stand, any object size below.
+- `phone_cradle.scad` → `cam_R`: camera-to-object distance. Leave at 200 mm and
+  change **zoom** rather than geometry to handle different object sizes — see
+  Framing below. This sets the size of the wings, so pick it before printing.
+
+## Why the stand is an arc
+
+Tilting the tray only changes where the camera *aims*, not where it *is*. A
+cradle fixed at object height shooting 40° down aims at the tabletop in front
+of the object. To shoot down at θ and keep the object centred and the same size
+in frame, the camera has to ride an arc of constant radius about the object
+centre:
+
+```
+y = cam_R·cos θ        z = obj_h + cam_R·sin θ        tilt = θ
+```
+
+Higher **and** closer as θ grows. Besides framing, that's also what keeps the
+stand short — reaching 65° on an arc needs 271 mm of height, but a straight
+column 200 mm back would need **519 mm**:
+
+| elevation | arc: dist / height | straight column: height |
+|---|---|---|
+| 15° | 193 mm / 142 mm | 144 mm |
+| 40° | 153 mm / 219 mm | 258 mm |
+| 65° | 85 mm / 271 mm | 519 mm |
+
+The wings' three pivot stations sit on that arc, each with a lock hole that
+sets the matching tilt, so the geometry can't be set wrong. Verified in CAD:
+the tray clears the wings and crossbars at all three stations, and the stand
+stays stable (worst-case CG 23 mm inside the front foot).
 
 ## Assemble
 
@@ -125,6 +165,89 @@ only if shaft engagement feels shallow.
    to test the BLE-keyboard shutter trick before wiring up the SuperMini.
    See that file's header comment for how to enter direct-flash mode.
 
+## One stand, any object size
+
+`obj_h` is baked into the wings, but it only fixes where the arc *aims*. What
+actually matters is the height difference between the wings' base and the object
+centre — so change that with a shim instead of reprinting a stand:
+
+```
+shim = (object height)/2 + 69 − obj_h      (69 = platter top above the desk)
+```
+
+- **positive** → spacer under both wings (`shim` part; set `shim_rise`, print 2)
+- **negative** → riser under the object, on the platter (any disc of that height)
+
+At the default `obj_h = 101`:
+
+| object height | shim |
+|---|---|
+| 20 mm | 22 mm riser under the object |
+| 40 mm | 12 mm riser under the object |
+| **64 mm** | **none — exact** |
+| 80 mm | 8 mm under the wings |
+| 100 mm | 18 mm under the wings |
+| 130 mm | 33 mm under the wings |
+| 160 mm | 48 mm under the wings |
+
+And you can ignore the shim entirely over a useful range, because the object just
+sits slightly off-centre in frame rather than badly misaimed: **no shim needed
+for 43–85 mm objects at 2x, or 23–105 mm at 1x** (the wider 1x frame is more
+forgiving). Only reach for a shim outside those bands.
+
+## Framing — how much of the frame the object should fill
+
+Apple's rule is "maximize the portion of the field of view capturing the
+object", but "each image should contain the entirety of the object". For a
+turntable that needs one extra constraint: **the object rotates**, so you have
+to frame its *widest* rotational profile, not the width you happen to see when
+setting up.
+
+**Target ~65% of the short (vertical) frame dimension at the object's widest
+rotation.** Spin the platter a full turn by hand and confirm nothing clips.
+
+- Below ~50%: throwing away resolution.
+- Above ~80%: the object clips on some rotations, and it sits in the
+  lens-distortion zone at the frame edges. Clipped frames cost more than the
+  extra detail gains.
+
+At `cam_R = 200 mm`, the vertical frame is almost exactly the camera distance
+at 1x, and half that at 2x:
+
+| zoom | vertical frame | detail | 65% fill = object |
+|---|---|---|---|
+| **1x** (24 mm eq, 24 MP) | 199 mm | 21 px/mm | **130 mm** |
+| **2x** (48 mm eq, 12 MP) | 100 mm | 30 px/mm | **65 mm** |
+
+So one printed stand covers roughly **50–160 mm** objects just by switching
+zoom — and 2x actually resolves *more* detail per mm than 1x, because it's a
+true sensor crop of the 48 MP main camera (not interpolation). Smaller objects
+still work at reduced fill: a 30 mm object at 2x is ~900 px across, plenty for
+a good mesh. Avoid the 5x lens — it's a separate camera with a much longer
+minimum focus distance.
+
+**Keep the zoom locked and identical for all 144 shots** of a session, along
+with focus and exposure — Apple asks for consistent focal length, shutter,
+aperture and ISO across the set. Never change zoom mid-session.
+
+### Aligning the lens with the turntable axis
+
+The arc is centred on the tray's pivot, but the iPhone's rear lens is **not** at
+the centre of the phone — the camera island sits near one end, roughly 45–50 mm
+off centre along the phone's long axis. In landscape that offset is sideways, so
+if you line the *stand* up with the turntable axis, the object lands well off
+centre in the frame (~14° off axis at 200 mm — near the edge at 2x).
+
+Fix at setup, no parts change: **slide the turntable sideways until the object
+is centred in the camera preview**, then mark the spot. Aligning the lens (not
+the stand) with the platter axis also makes the camera-to-object distance
+exactly `cam_R`. There's a smaller ~9 mm vertical offset too; nudge the
+turntable or `obj_h` if the object sits high or low in frame.
+
+Overlap is already comfortable: 48 shots/revolution = 7.5° steps ≈ 96% overlap
+between adjacent frames (Apple's minimum is 70%), and 3 orbits × 48 = 144
+images (Apple's minimum is 100).
+
 ## Scan workflow
 
 1. Flash `firmware/turntable_shutter/` (Arduino IDE, ESP32 board package,
@@ -135,8 +258,10 @@ only if shaft engagement feels shallow.
    diffuse lighting on all sides — your lighting kit, or a light tent.
    Matte-coat shiny objects (dry shampoo / scanning spray).
 3. Open the Camera app, lock focus/exposure (long-press → AE/AF LOCK).
-4. Cradle at 0° (level with the object) → press the ESP32 button →
-   48 photos. Re-pin to 30°, repeat. Re-pin to 60°, repeat. ≈144 photos.
+4. Tray on the lowest arc station (15°) → press the ESP32 button → 48 photos.
+   Move the tray's 3 screws to the 40° station, repeat; then 65°. ≈144 photos.
+   Set `obj_h` so the arc is centred on your object, and re-check framing at
+   the first station — all three stations then frame identically.
 5. AirDrop the photos to the Mac and reconstruct:
 
    ```sh
