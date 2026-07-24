@@ -1,0 +1,15 @@
+# Build artifacts
+photogrammetry
+*.o
+*.dSYM/
+
+# macOS
+.DS_Store
+
+# Personal photos — NOT part of the shareable project, keep out of the public repo
+Photo on *.jpg
+photos-step-motor/
+
+# Scan inputs / outputs (large, user-specific)
+photos/
+*.usdz
