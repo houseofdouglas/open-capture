@@ -28,8 +28,14 @@
 // GPIO0 has no button behind it on this board.
 //
 // Use: pair "ScanTable" in iPhone Bluetooth settings, open the Camera
-// app, frame the object, press the ESP32 BOOT button to run one full
-// revolution. Re-tilt the cradle, press again for the next orbit.
+// app, frame the object, then use the ESP32 BOOT button:
+//
+//   single press  scan — one revolution, 48 photos per paired phone
+//                 (~3 min). Move the tray to the next arc station and
+//                 press again, unless all three stations are loaded.
+//   double press  dry run — one revolution in ~10 s, no photos, no
+//                 phone needed. Use it to confirm the object stays in
+//                 frame at every angle before committing to a scan.
 
 #include <NimBLEDevice.h>   // for startAdvertising(); BleKeyboard.h doesn't pull it in
 #include <BleKeyboard.h>
@@ -81,6 +87,15 @@ const int   SETTLE_MS      = 1500;    // vibration die-down before the shot
 const long  BACKLASH_STEPS = 100;
 const int   EXPOSURE_MS    = 1800;    // time for iPhone to capture + save
 
+// Double-press = one revolution with no photos: a dry run for checking that the
+// object never clips at any angle before committing to a real scan, and for
+// exercising the mechanism before any phone is paired. It runs continuously
+// rather than step-and-pause, so ~10 s instead of ~3 min — slower per step than
+// a scan, since nothing has to settle and a gentler speed is easier to watch
+// (and kinder to a tall or unbalanced object).
+const int   DOUBLE_MS      = 400;     // window to catch the second press
+const int   DRY_STEP_US    = 2500;    // ~10 s per revolution
+
 // Never hand-count connections: iOS's HID pairing does connect → bond →
 // reconnect, so connect/disconnect callbacks don't reliably pair up and a
 // counter drifts. The server knows the truth — ask it.
@@ -94,11 +109,11 @@ const uint8_t SEQ[8] = {0b1000, 0b1100, 0b0100, 0b0110,
                         0b0010, 0b0011, 0b0001, 0b1001};
 long stepIndex = 0;
 
-void stepOnce() {
+void stepOnce(int us) {
   stepIndex = (stepIndex + 1) % 8;
   for (int i = 0; i < 4; i++)
     digitalWrite(PINS[i], (SEQ[stepIndex] >> (3 - i)) & 1);
-  delayMicroseconds(STEP_DELAY_US);
+  delayMicroseconds(us);
 }
 
 void coilsOff() {                     // release the rotor (see rotateSteps)
@@ -122,8 +137,8 @@ void coilsOff() {                     // release the rotor (see rotateSteps)
 //
 // Holding costs ~200 mA per energised phase and the motor runs warm — that is
 // well within its continuous rating for a ~3 minute revolution.
-void rotateSteps(long n) {
-  for (long i = 0; i < n; i++) stepOnce();
+void rotateSteps(long n, int us) {
+  for (long i = 0; i < n; i++) stepOnce(us);
 }
 
 void setup() {
@@ -176,11 +191,43 @@ void keepAdvertising() {
   NimBLEDevice::startAdvertising();
 }
 
+// Returns 0 = nothing, 1 = single press, 2 = double press. A single press only
+// resolves after the double-press window closes, which costs DOUBLE_MS before a
+// scan starts — unnoticeable next to a 3 minute revolution.
+int readButton() {
+  if (digitalRead(BUTTON) == HIGH) return 0;
+  delay(30);                                       // debounce
+  if (digitalRead(BUTTON) == HIGH) return 0;       // bounce or noise, not a press
+  while (digitalRead(BUTTON) == LOW) delay(10);    // wait for release
+
+  for (unsigned long t0 = millis(); millis() - t0 < DOUBLE_MS; ) {
+    if (digitalRead(BUTTON) == LOW) {
+      delay(30);
+      while (digitalRead(BUTTON) == LOW) delay(10);
+      return 2;
+    }
+    delay(5);
+  }
+  return 1;
+}
+
+// One revolution, no photos, no phone required. Still takes up the backlash
+// first so the platter turns exactly as it would in a scan, and holds the coils
+// throughout for the same reason a scan does.
+void dryRun() {
+  Serial.println("Dry run — one revolution, no photos. Watch for clipping.");
+  rotateSteps(BACKLASH_STEPS, DRY_STEP_US);
+  rotateSteps(STEPS_PER_REV, DRY_STEP_US);
+  coilsOff();
+  Serial.println("Dry run complete.");
+}
+
 void loop() {
   keepAdvertising();
 
-  if (digitalRead(BUTTON) == HIGH) { delay(20); return; }
-  while (digitalRead(BUTTON) == LOW) delay(10);   // wait for release
+  int press = readButton();
+  if (press == 0) { delay(20); return; }
+  if (press == 2) { dryRun(); return; }
 
   // Run with whatever is paired — one phone is a perfectly good scan, it just
   // takes three revolutions instead of one. Only a completely empty set is an
@@ -199,14 +246,14 @@ void loop() {
   // the backlash closes, and those frames sit at the wrong angle. These steps
   // are deliberately not counted against STEPS_PER_REV — they buy motion in the
   // mechanism, not rotation of the platter.
-  rotateSteps(BACKLASH_STEPS);
+  rotateSteps(BACKLASH_STEPS, STEP_DELAY_US);
   delay(SETTLE_MS);
 
   long remainder = STEPS_PER_REV;
   for (int shot = 0; shot < PHOTOS_PER_REV; shot++) {
     long inc = remainder / (PHOTOS_PER_REV - shot);  // distributes rounding
     remainder -= inc;
-    rotateSteps(inc);
+    rotateSteps(inc, STEP_DELAY_US);
     delay(SETTLE_MS);
     // One notify reaches every subscribed host, so all phones fire together.
     bleKeyboard.write(KEY_MEDIA_VOLUME_UP);          // shutter

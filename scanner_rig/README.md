@@ -208,7 +208,10 @@ to frame its *widest* rotational profile, not the width you happen to see when
 setting up.
 
 **Target ~65% of the short (vertical) frame dimension at the object's widest
-rotation.** Spin the platter a full turn by hand and confirm nothing clips.
+rotation.** To check it, **double-press the BOOT button**: the table makes one
+full revolution in ~10 s with no photos, so you can watch the preview and
+confirm nothing clips at any angle. (Works with no phone paired too, for
+exercising the mechanism.)
 
 - Below ~50%: throwing away resolution.
 - Above ~80%: the object clips on some rotations, and it sits in the
@@ -370,7 +373,9 @@ to assemble, which is why the screw is the primary fix.
    fill ~70% of the frame; use 2x at ~50 cm for small objects). Even,
    diffuse lighting on all sides — your lighting kit, or a light tent.
    Matte-coat shiny objects (dry shampoo / scanning spray).
-3. Open the Camera app, lock focus/exposure (long-press → AE/AF LOCK).
+3. Open the Camera app, lock focus/exposure (long-press → AE/AF LOCK). Then
+   **double-press BOOT** for a photo-free revolution and watch that the object
+   stays in frame all the way round before committing to a real scan.
 4. Tray on the lowest arc station (15°) → press the ESP32 button → 48 photos.
    Move the tray's 3 screws to the 40° station, repeat; then 65°. ≈144 photos.
    Set `obj_h` so the arc is centred on your object, and re-check framing at
