@@ -45,7 +45,11 @@ in `turntable.scad` if you'd rather have the fully enclosed disc + skirt.
 | `phone_cradle.scad` | `tray` | flat on its back |
 | `phone_cradle.scad` | `wing` x2 (`stl/cradle_arc_wing.stl`) | flat (238 x 312 x 6) |
 | `phone_cradle.scad` | `crossbar` x2 (`stl/cradle_arc_crossbar.stl`) | flat |
+| `phone_cradle.scad` | `gauge` (`stl/cradle_setback_gauge.stl`) | flat — holds the stand's setback, see below |
+| `phone_cradle.scad` | `chocks` (`stl/cradle_foot_chocks.stl`) | one print = both chocks; locks the position outright |
 | `phone_cradle.scad` | `shim` x2 (`stl/cradle_arc_shim.stl`) | only for taller objects — see below |
+| `phone_cradle.scad` | `gauge` x1 (`stl/cradle_setback_gauge.stl`) | sets turntable↔stand distance repeatably |
+| `phone_cradle.scad` | `chocks` x1 file (`stl/cradle_foot_chocks.stl`) | lock the turntable foot once aligned |
 
 (`stand` is the older flat stand — superseded by the arc wings, see below.)
 | `header_pin_jig.scad` (`stl/header_pin_jig.stl`) | OPTIONAL: solder the ESP32-C3 SuperMini's header pins | flat on the bed |
@@ -230,6 +234,76 @@ minimum focus distance.
 with focus and exposure — Apple asks for consistent focal length, shutter,
 aperture and ISO across the set. Never change zoom mid-session.
 
+### Holding the setback (`stl/cradle_setback_gauge.stl`, print 1)
+
+Re-pinning the tray between stations nudges the stand, and any change in setback
+changes `cam_R` — so scale, framing and focus distance drift between passes,
+which is exactly what the arc exists to prevent.
+
+The gauge is a bar that drops over both wing toes (a slot either side of each
+bottom rail) and presents a flat face 11 mm in front of them. Turn the turntable
+so **one foot points at the stand**, push it back until that foot touches the
+face, and the platter axis is 100 mm from the toes — by geometry, not by eye.
+
+Two things about it are deliberate:
+
+- **The contact is flat, not a pocket.** A flat only fixes fore/aft, so you can
+  still slide the turntable sideways to put the lens on the axis (below). A
+  pocket capturing the foot would fix the sideways offset too and make the
+  ~45–50 mm lens offset unreachable.
+- **Aim is forgiving.** As the foot rotates its outer corner sweeps toward the
+  contact, so being 10° off costs under 0.2 mm of setback (20° ≈ 1.8 mm). It
+  does not need to be squared up carefully.
+
+Verified in CAD: at the stop it touches the foot with zero interference, clears
+both wings and the platter, and still clears after sliding the turntable 50 mm
+sideways. Print flat as modelled — no supports.
+
+### Locking the position outright (`stl/cradle_foot_chocks.stl`, one print = 2 parts)
+
+The gauge alone only stops the turntable moving *closer*. It can still slide
+sideways or pull away, so knocking the stand while re-pinning the tray still
+changes the framing and the next pass no longer matches the last.
+
+The chocks finish the job. They are a C-clamp that drops onto the gauge bar from
+above (anywhere along it — they never have to slide past the wing-rail guides)
+and clamp either side of the captured foot with an M4 self-tap screw:
+
+| direction | what stops it |
+|---|---|
+| fore | the gauge's flat face on the foot's outer face |
+| aft | the chocks' inward hooks catching the foot's inner face |
+| lateral | the two chock side faces pinching the foot |
+| yaw | those same two faces holding the foot square |
+
+**Yaw is the one that is easy to miss.** The platter axis is located
+*indirectly*, 80 mm inboard of the foot, so letting the base rotate swings the
+axis even with the foot's position perfectly fixed. That is why the foot is
+gripped on both sides rather than simply cornered.
+
+Set them **once, after the lens alignment**, and the sideways offset is
+preserved — they clamp anywhere along the bar, so nothing hard-codes an offset
+specific to one phone or one landscape orientation. To re-align later, slacken
+both screws, slide, retighten.
+
+Drive the screws from **behind**: the reaction pulls the collar onto the bar. A
+screw pressing down from the top would jack the chock off it instead.
+
+Measured slack in CAD — seated with zero interference, and colliding as soon as
+it moves:
+
+| movement | free until | residual effect |
+|---|---|---|
+| lateral | 0.5 mm | 0.14° off-axis — negligible |
+| pull away | 0.5 mm | 0.25% scale error |
+| yaw | under 0.5° | swings the axis 0.7 mm |
+
+Worst case that is ~1.2 mm of axis error, **0.9% of the 133 mm frame width at
+2x** — comfortably below what shows up between passes.
+
+To remove the turntable, just lift it out; the hooks are only 12 mm tall against
+a 32 mm foot.
+
 ### Aligning the lens with the turntable axis
 
 The arc is centred on the tray's pivot, but the iPhone's rear lens is **not** at
@@ -248,6 +322,45 @@ Overlap is already comfortable: 48 shots/revolution = 7.5° steps ≈ 96% overla
 between adjacent frames (Apple's minimum is 70%), and 3 orbits × 48 = 144
 images (Apple's minimum is 100).
 
+## Uneven advances — drive-train backlash
+
+Symptom: stepping through the shots, some advances look full and others fall
+short, at random.
+
+The cause is lost motion between the motor and the platter, and it is much
+larger than it looks. The platter's D-bore rides the 28BYJ-48's flatted shaft
+with 0.4 mm of clearance across a 3 mm flat — a 1.5 mm moment arm, so that tiny
+linear clearance becomes **~6° of free rotation, about 80% of a 7.5° photo
+step.** The motor's own plastic gear train adds more on top.
+
+| bore flats | clearance | free rotation | of a 7.5° step |
+|---|---|---|---|
+| 3.4 (original) | 0.40 mm | 5.97° | 80% |
+| 3.2 | 0.20 mm | 2.92° | 39% |
+| 3.1 | 0.10 mm | 1.45° | 19% |
+
+Three fixes, in order of effect:
+
+1. **Grub screw in the hub (removes the play, doesn't just shrink it).**
+   `hub_grub` adds a radial M3 into the boss, clamping the shaft's flat against
+   the opposite bore flat. **No reprint needed** — the boss is Ø18 around a
+   Ø5.4 bore, so there is 7.3 mm of wall. Drill Ø2.5 radially at mid-boss
+   height on an already-printed platter and run an M3 grub screw in.
+2. **Hold the coils for the whole revolution.** The firmware used to cut the
+   coils after *every* increment, so during the 3.3 s of settle + exposure the
+   rotor had no holding torque and the platter relaxed back into the slack;
+   the next move then spent part of its travel re-taking it up. Turning one
+   direction only, the slack is taken up **once** — but only while the rotor is
+   held. Coils now release only at the end of the run. Costs ~200 mA per
+   energised phase and the motor runs warm, well inside its continuous rating.
+3. **Pre-load before the first shot.** `BACKLASH_STEPS` (100 half-steps ≈ 8.8°)
+   runs in the same direction as the revolution before frame 1, so the first
+   advances aren't short while the backlash closes. Those steps are not counted
+   against `STEPS_PER_REV` — they buy motion in the mechanism, not rotation.
+
+Tightening `shaft_flats` helps but never reaches zero and risks a bore too tight
+to assemble, which is why the screw is the primary fix.
+
 ## Scan workflow
 
 1. Flash `firmware/turntable_shutter/` (Arduino IDE, ESP32 board package,
@@ -262,6 +375,28 @@ images (Apple's minimum is 100).
    Move the tray's 3 screws to the 40° station, repeat; then 65°. ≈144 photos.
    Set `obj_h` so the arc is centred on your object, and re-check framing at
    the first station — all three stations then frame identically.
+
+   **Or mount up to three phones and do it in one revolution.** The firmware
+   drives whatever is paired, 1 to 3 — there is nothing to configure and no
+   reflash to change the count. It keeps advertising while a slot is free, so a
+   phone can be added or dropped at any time, including between revolutions;
+   each run simply fires whichever are connected. With one tray per station
+   (they clear each other by 6.5 mm, and the stand is stable at ~1 kg) a single
+   revolution captures all 144 photos — ~2.5 min instead of ~8, with no
+   re-pinning.
+
+   A BLE HID notify reaches every subscribed host, so one keypress fires them
+   all; the table stands still ~3 s per step, so sync tolerance is about a
+   second, not milliseconds. Pair the phones **one at a time**, waiting for each
+   `phone connected — n of up to 3` line before starting the next.
+
+   Caveats: every phone needs the Camera app frontmost with AE/AF and zoom
+   locked; identical models are preferable so the camera intrinsics match; and
+   a tray sized per model if the phones differ (the tray is parametric). Three
+   phones need the raised CCCD store — see `firmware/turntable_shutter/
+   LIBRARIES.md`; a `static_assert` fails the build if it's missing. If iOS
+   refuses the second or third pairing, fall back to one ESP32 per phone with a
+   shared GPIO trigger line — the ~1 s tolerance makes that easy.
 5. AirDrop the photos to the Mac and reconstruct:
 
    ```sh

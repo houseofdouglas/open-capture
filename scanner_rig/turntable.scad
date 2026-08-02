@@ -217,6 +217,25 @@ module axle() {
     }
 }
 
+// Grub screw through the hub boss, clamping the shaft's flat against the
+// opposite bore flat. This is what actually REMOVES the coupling play rather
+// than reducing it: the D-bore's 0.4 mm clearance across a 3 mm flat is a very
+// short moment arm, so it becomes ~6 deg of free rotation at the platter —
+// about 80% of a 7.5 deg photo step, which lands as advances that look complete
+// on some steps and short on others.
+//
+//   bore flats   clearance   free rotation
+//   3.4 (was)      0.40        5.97 deg
+//   3.2            0.20        2.92 deg
+//   3.1            0.10        1.45 deg
+//
+// Tightening the bore helps but never reaches zero and risks a bore too tight
+// to assemble; the screw does. An ALREADY-PRINTED platter can simply be drilled
+// — the boss is Ø18 around a Ø5.4 bore, so there is 6.3 mm of wall to tap.
+// Drill Ø2.5 radially into the hub at mid-boss height and run an M3 grub in.
+hub_grub   = true;   // radial set screw in the hub boss
+hub_grub_d = 2.5;    // M3 self-tap (PETG); use 3.2 for a nut-free clearance fit
+
 module platter() {
     hub_gap = 1;   // hub bottom this far above the plate top
     difference() {
@@ -233,6 +252,11 @@ module platter() {
                     circle(d = shaft_d);
                     square([shaft_d + 2, shaft_flats], center = true);
                 }
+        // grub screw: radial, at mid-boss height, aimed at a shaft FLAT (the
+        // flats face +/-Y in the bore above, so drive it along Y onto one)
+        if (hub_grub)
+            translate([0, 9 + 0.01, (hub_gap + shaft_above_plate + 4) / 2])
+                rotate([90, 0, 0]) cylinder(d = hub_grub_d, h = 9);
         // optional shallow recess on top for a cork/rubber grip disc
         if (grip_recess > 0)
             translate([0, 0, platter_lift + platter_t - grip_recess])

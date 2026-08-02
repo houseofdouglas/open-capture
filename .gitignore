@@ -12,4 +12,5 @@ photos-step-motor/
 
 # Scan inputs / outputs (large, user-specific)
 photos/
+scan/
 *.usdz

@@ -14,18 +14,24 @@
 //   tray      x1  (unchanged — reuse an already-printed one)
 //   wing      x2  print flat, 238 x 321 x 6, no supports (one at a time)
 //   crossbar  x2  print flat
+//   gauge     x1  setback stop — bridges the wing toes, turntable pushes
+//                 back against it so the setback can't drift
+//   chocks    x1 print, 2 parts — clamp either side of one turntable foot.
+//                 With the gauge these pin the platter axis to the stand in
+//                 every direction, so framing repeats between passes.
 //   shim      x2  only when retargeting the arc at a taller object
 //   stand         legacy flat stand, kept for reference only
 //
 // Hardware per setup: 2x M4x12 pivots + 1x M4x12 lock pin
-// (self-tap into the tray bosses) + 4x M4x12 for the crossbars.
+// (self-tap into the tray bosses) + 4x M4x12 for the crossbars
+// + 2x M4x12 lock screws for the foot chocks.
 //
 // Use: the camera shoots out the tray's back window. Turntable
 // axis is y = 0, the stand stands at +y. To change pass, move the
 // tray's 3 screws to the next station's hole pair.
 // ─────────────────────────────────────────────────────────────
 
-part = "assembly"; // ["assembly", "arc_assembly", "tray", "wing", "crossbar", "shim", "stand"]
+part = "assembly"; // ["assembly", "arc_assembly", "tray", "wing", "crossbar", "gauge", "shim", "stand"]
 
 $fn = 64;
 
@@ -112,6 +118,55 @@ toe_y    = 100;  // front foot (clears the Ø184 turntable frame)
 heel_y   = 290;  // rear foot — counters the forward lean of the arch
 strut_w  = 18;   // rear diagonal width
 xbar     = [16, 12];  // cross-bar cross-section
+
+/* [Setback gauge — repeatable stand-to-turntable distance] */
+// Moving a phone between stations nudges the stand, and any change in setback
+// changes cam_R — so framing, scale and focus distance drift between passes.
+// This bar bridges the two wing toes and gives the turntable a hard stop to be
+// pushed back against, so the distance is set by geometry instead of by eye.
+//
+// It butts a turntable FOOT (outer face at leg_r + leg_x/2 = 89 in
+// turntable.scad), with the base turned so one foot points at the stand.
+//
+// The contact is a FLAT face, deliberately. A flat touching the foot fixes only
+// the fore/aft distance, so the turntable can STILL slide sideways to put the
+// lens on the platter axis (README: "Aligning the lens with the turntable
+// axis"). A pocket that captured the foot would fix the sideways offset too and
+// fight that adjustment — the ~45-50 mm lens offset would be unreachable.
+//
+// Aim is forgiving: as the foot rotates its outer corner sweeps toward the
+// contact, so being 10 deg off costs under 0.2 mm of setback (20 deg ~ 1.8 mm).
+tt_foot_r  = 89;   // turntable foot outer radius (turntable.scad: leg_r+leg_x/2)
+gauge_h    = 12;   // bar height — well under the foot's 32 mm, clears the
+                   // Ø184 ring (starts at z=32) and the platter (z=63)
+gauge_grip = 26;   // how far the side guides run back along the wing rails
+gauge_wall = 5;    // guide wall thickness
+gauge_fit  = 0.4;  // slip fit over the 6 mm wing rail
+
+/* [Foot chocks — lock the turntable's position outright] */
+// The gauge alone only stops the turntable moving CLOSER; it can still slide
+// sideways or pull away, so a knock while re-pinning the tray still changes the
+// framing. A pair of chocks clamps onto the gauge bar either side of one foot:
+//   - the gauge face stops the foot moving in   (fore)
+//   - the inward hooks catch the foot's inner face, stopping it moving out (aft)
+//   - the two side faces pinch the foot         (lateral)
+//   - both side faces together hold the foot square (yaw)
+// Yaw matters here: the axis is located INDIRECTLY, 80 mm inboard of the foot,
+// so letting the base rotate would swing the axis even with the foot's position
+// fixed. With all four constraints the platter axis is fully determined
+// relative to the arc, which is what makes framing repeat between passes.
+//
+// Set them ONCE, after the lens alignment, and the offset is preserved — the
+// chocks slide anywhere along the bar, so this fixes the position without
+// hard-coding a lens offset that is specific to one phone and orientation.
+tt_foot_w  = 26;   // turntable foot tangential width (turntable.scad: leg_y)
+tt_foot_d  = 18;   // turntable foot radial depth     (turntable.scad: leg_x)
+chock_w    = 14;   // chock body width along the bar
+chock_wall = 5;    // collar wall thickness
+chock_fit  = 0.5;  // slide fit on the gauge bar
+chock_hook = 6;    // how far the hook reaches over the foot's inner face
+chock_tap  = 3.6;  // M4 self-tap for the lock screw
+chock_boss = 4;    // extra thickness behind the screw for thread engagement
 
 inner_l = phone_l + fit;
 inner_w = phone_w + fit;
@@ -279,10 +334,74 @@ module arc_shim() {
 module arc_crossbar() {
     difference() {
         translate([0, -xbar[0] / 2, 0]) cube([span, xbar[0], xbar[1]]);
-        for (x = [-1, span + 1])
-            translate([x, 0, xbar[1] / 2]) rotate([0, 90, 0])
+        // one bore per end, each drilling INWARD from its own face
+        for (e = [[-1, 90], [span + 1, -90]])
+            translate([e[0], 0, xbar[1] / 2]) rotate([0, e[1], 0])
                 cylinder(d = tap_d, h = 14);
     }
+}
+
+// Setback gauge: flat face butts a turntable foot, side guides drop over each
+// wing's bottom rail at the toe so the bar can't wander. Print flat as drawn
+// (desk face on the bed) — no overhangs, no supports.
+module arc_gauge() {
+    depth   = toe_y - tt_foot_r;                  // 11 mm: foot face -> wing toe
+    half    = span / 2 + wing_t + gauge_fit + gauge_wall;
+    guide_h = rail_h + 2;                         // stand proud of the 14 mm rail
+    union() {
+        // cross member — its front face (y = tt_foot_r) is the turntable stop
+        translate([-half, tt_foot_r, 0]) cube([2 * half, depth, gauge_h]);
+        // a guide either side of each wing rail
+        for (s = [-1, 1])
+            let (xi = (s > 0) ? span / 2 : -span / 2 - wing_t)   // rail inner face
+                for (dx = [-gauge_fit - gauge_wall, wing_t + gauge_fit])
+                    translate([xi + dx, toe_y, 0])
+                        cube([gauge_wall, gauge_grip, guide_h]);
+    }
+}
+
+// One chock, drawn right-handed: the face that touches the foot is x = 0 and the
+// body runs to +x, so the mirror image serves the other side. The collar is a C
+// open at the BOTTOM, so it drops onto the gauge bar from above anywhere along
+// its length — it never has to slide past the wing-rail guides at the ends.
+module arc_chock() {
+    // Hook face sits chock_fit BEHIND the foot's inner face, so the 18 mm foot
+    // drops into an 18.5 mm pocket instead of jamming in an exact-size one.
+    y_in = tt_foot_r - tt_foot_d - chock_fit;
+    yf   = tt_foot_r - chock_wall - chock_fit;    // collar front, outside
+    yb   = toe_y + chock_wall + chock_fit;        // collar back, outside
+    top  = gauge_h + chock_fit + chock_wall;
+    difference() {
+        union() {
+            translate([0, yf, 0])   cube([chock_w, yb - yf, top]);            // collar
+            translate([0, y_in, 0]) cube([chock_w, tt_foot_r - y_in, gauge_h]);// arm
+            translate([-chock_hook, y_in - chock_wall, 0])                     // hook
+                cube([chock_hook + chock_w, chock_wall, gauge_h]);
+            translate([0, yb, 0])   cube([chock_w, chock_boss, top]);          // screw boss
+        }
+        // bar cavity — open at the bottom, so the chock drops on from above
+        translate([-1, tt_foot_r - chock_fit, -1])
+            cube([chock_w + 2, (toe_y - tt_foot_r) + 2 * chock_fit,
+                  gauge_h + chock_fit + 1]);
+        // lock screw: horizontal, through the back wall onto the bar. Driven
+        // this way its reaction pulls the collar ONTO the bar; a screw pressing
+        // down from the top would instead jack the chock off it.
+        translate([chock_w / 2, yb + chock_boss + 1, gauge_h / 2])
+            rotate([90, 0, 0])
+                cylinder(d = chock_tap, h = chock_wall + chock_boss + 2, $fn = 24);
+    }
+}
+
+// Both chocks laid out for one print.
+module arc_chock_pair() {
+    translate([ 25, 0, 0]) arc_chock();
+    translate([-25, 0, 0]) mirror([1, 0, 0]) arc_chock();
+}
+
+// The pair in place, gripping a foot centred on x = dx.
+module arc_chocks_placed(dx = 0) {
+    translate([dx + tt_foot_w / 2 + chock_fit, 0, 0]) arc_chock();
+    translate([dx - tt_foot_w / 2 - chock_fit, 0, 0]) mirror([1, 0, 0]) arc_chock();
 }
 
 // Place a wing in 3D: local x→y (distance from turntable axis), local y→z.
@@ -324,6 +443,8 @@ if (part == "tray")     tray();
 if (part == "stand")    stand();          // legacy flat stand
 if (part == "wing")     arc_wing();       // print 2
 if (part == "crossbar") arc_crossbar();   // print 2
+if (part == "gauge")    arc_gauge();      // print 1
+if (part == "chocks")   arc_chock_pair(); // print 1 file -> both chocks
 if (part == "shim")     arc_shim();       // print 2, only for taller objects
 
 if (part == "assembly") {
@@ -339,13 +460,27 @@ if (part == "assembly") {
 // The arc stand with the tray shown at all three camera positions, plus the
 // turntable and a stand-in object for context.
 if (part == "arc_assembly") {
-    color("Khaki") arc_stand();
+    color("Khaki")  arc_stand();
+    color("Orange") arc_gauge();
+    color("Coral")  arc_chocks_placed(0);
     for (i = [0 : len(elevations) - 1])
         color(i == 0 ? "SteelBlue" : "LightSteelBlue", i == 0 ? 0.95 : 0.45)
             tray_on_arc(elevations[i]);
     // Turntable stand-in, measured from turntable.scad with the desk at z=0:
     // legs 0..32, base plate 32..37, platter 63..69 (Ø200).
-    color("Gray")    cylinder(d = 184, h = 37);
+    // Frame stand-in matching the real spoked base rather than a solid disc:
+    // 3 feet (r 71..89, 26 wide, up to z=32) and the Ø184 ring at z 32..37,
+    // turned so ONE FOOT AIMS AT THE STAND (feet at 90/210/330) — which is how
+    // the gauge and chocks expect it. Only the feet reach down to chock height.
+    color("Gray") {
+        translate([0, 0, 32]) difference() {
+            cylinder(d = 184, h = 5);
+            translate([0, 0, -1]) cylinder(d = 136, h = 7);
+        }
+        for (a = [90, 210, 330]) rotate([0, 0, a])
+            translate([tt_foot_r - tt_foot_d, -tt_foot_w / 2, 0])
+                cube([tt_foot_d, tt_foot_w, 32]);
+    }
     color("DimGray") translate([0, 0, 63]) cylinder(d = 200, h = 6);
     // the object: sits on the platter top (69) with its CENTRE at obj_h
     color("Tomato")  translate([0, 0, platter_top])

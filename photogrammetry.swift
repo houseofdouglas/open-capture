@@ -77,8 +77,9 @@ struct PhotogrammetryCLI {
 
         do {
             let session = try PhotogrammetrySession(input: inputURL, configuration: config)
-            let watcher = Task {
+            let watcher = Task { () -> Bool in
                 var lastPercent = -1
+                var failed = false
                 for try await output in session.outputs {
                     switch output {
                     case .inputComplete:
@@ -96,17 +97,24 @@ struct PhotogrammetryCLI {
                         print("\nNote: images were downsampled to fit in memory")
                     case .requestError(_, let error):
                         fputs("\nReconstruction error: \(error)\n", stderr)
+                        failed = true
                     case .requestComplete(_, .modelFile(let url)):
                         print("Model written to \(url.path)")
                     case .processingComplete:
+                        // Terminal event: the model is saved. Stop listening so the
+                        // process can exit instead of blocking on `outputs` forever.
                         print("Done.")
+                        return !failed
                     default:
                         break
                     }
                 }
+                // `outputs` ended without an explicit processingComplete.
+                return !failed
             }
             try session.process(requests: [.modelFile(url: outputURL, detail: detail)])
-            try await watcher.value
+            let succeeded = try await watcher.value
+            if !succeeded { exit(1) }
         } catch {
             fputs("Error: \(error)\n", stderr)
             exit(1)
