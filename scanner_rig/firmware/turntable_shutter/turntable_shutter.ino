@@ -78,7 +78,14 @@ static_assert(MYNEWT_VAL_BLE_STORE_MAX_CCCDS >= 3 * MAX_PHONES,
               "Check build_opt.h sits next to this .ino and defines "
               "MYNEWT_VAL_BLE_STORE_MAX_CCCDS.");
 const int   PHOTOS_PER_REV = 48;      // 48 per pass; x3 passes (or x3 phones)
-const long  STEPS_PER_REV  = 4096;    // 28BYJ-48, half-stepping
+// 28BYJ-48, half-stepping. NOT the widely quoted 4096: that assumes the gearbox
+// is 1:64, but the actual four-stage train is
+//     (32/9)(22/11)(26/9)(31/10) = 1:63.684
+// so a platter revolution is 64 x 63.684 = 4075.8 half-steps. Using 4096 turns
+// 361.8 deg — the seam overlaps itself by 1.8 deg and every step is 7.537 deg
+// instead of 7.500. Harmless for reconstruction (pose comes from the images;
+// nothing reads the step count), but 4076 closes the circle exactly.
+const long  STEPS_PER_REV  = 4076;
 const int   STEP_DELAY_US  = 1200;    // slower = more torque
 const int   SETTLE_MS      = 1500;    // vibration die-down before the shot
 // Slack taken up before the first shot so frame 1 isn't short. ~6 deg of D-bore
