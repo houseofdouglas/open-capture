@@ -29,10 +29,26 @@ Build the photogrammetry CLI (macOS, Apple silicon, Xcode toolchain):
 swiftc -O -parse-as-library -o photogrammetry photogrammetry.swift
 ```
 
-Reconstruct a model from a folder of photos:
+Pull the latest scan session out of the Photos library (iCloud Photos brings
+the iPhone shots over on its own; requires `uv tool install osxphotos`), then
+reconstruct:
 
 ```bash
+./pull_photos.py ./photos
 ./photogrammetry ./photos ./model.usdz -d full -f high
+```
+
+`pull_photos.py` clusters recent iPhone shots by timestamp, so one "session"
+is one scan run; `--list` shows recent sessions, `--session N` picks an older
+one. Note iCloud can sync a session tail-first — make sure the photo count
+matches the run before reconstructing.
+
+To get a printable STL without manual Blender work (drops floating debris,
+voxel-remeshes watertight, exports in mm — scale to the object's measured
+size in the slicer, since reconstruction scale is approximate):
+
+```bash
+/Applications/Blender.app/Contents/MacOS/Blender -b -P usdz_to_stl.py -- model.usdz model.stl
 ```
 
 `-d` detail: `preview | reduced | medium | full | raw`  ·  `-f` feature

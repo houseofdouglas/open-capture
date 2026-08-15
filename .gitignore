@@ -9,6 +9,7 @@ photogrammetry
 # Personal photos — NOT part of the shareable project, keep out of the public repo
 Photo on *.jpg
 photos-step-motor/
+photos-*/
 
 # Scan inputs / outputs (large, user-specific)
 photos/

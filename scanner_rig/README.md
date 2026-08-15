@@ -402,9 +402,12 @@ to assemble, which is why the screw is the primary fix.
    LIBRARIES.md`; a `static_assert` fails the build if it's missing. If iOS
    refuses the second or third pairing, fall back to one ESP32 per phone with a
    shared GPIO trigger line — the ~1 s tolerance makes that easy.
-5. AirDrop the photos to the Mac and reconstruct:
+5. Pull the session onto the Mac and reconstruct. With iCloud Photos on,
+   `pull_photos.py` (repo root) finds the latest burst of iPhone shots in the
+   Photos library and exports it — no manual AirDrop or Photos exporting:
 
    ```sh
+   ./pull_photos.py ./photos        # or --list to pick an older session
    ./photogrammetry ./photos ./model.usdz -d full -f high
    ```
 
