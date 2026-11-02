@@ -36,6 +36,25 @@
 //   double press  dry run — one revolution in ~10 s, no photos, no
 //                 phone needed. Use it to confirm the object stays in
 //                 frame at every angle before committing to a scan.
+//
+// Laser scanning: the same board also drives the laser-line scanner. The Mac
+// (laser_scan.py) sends line commands over USB serial — build with
+// "USB CDC On Boot: Enabled" — and the button/BLE photo mode keeps working
+// alongside it. Each line laser is switched low-side by an NPN transistor:
+//
+//   GPIO 3  -> 1k -> 2N2222 base   (left laser,  as seen from the camera)
+//   GPIO 10 -> 1k -> 2N2222 base   (right laser)
+//   emitters -> GND,  collectors -> laser (-),  laser (+) -> 5V
+//
+// Commands (one per line, every reply starts "ok" or "err"):
+//   PING          -> ok scantable
+//   INFO          -> ok steps_per_rev=4076 backlash=100
+//   PRELOAD       take up the drive-train slack, then hold; zeroes POS
+//   STEP n        n half-steps forward (never backward), hold -> ok <pos>
+//   LASER mask    bit 0 = left, bit 1 = right                -> ok <mask>
+//   RELEASE       coils and lasers off
+// If the host goes quiet for HOST_IDLE_MS the lasers and coils switch off on
+// their own, so a crashed script can't leave a laser lit or the motor cooking.
 
 #include <NimBLEDevice.h>   // for startAdvertising(); BleKeyboard.h doesn't pull it in
 #include <BleKeyboard.h>
@@ -44,6 +63,9 @@ BleKeyboard bleKeyboard("ScanTable", "DIY", 100);
 
 const int PINS[4] = {4, 5, 6, 7};     // ULN2003 IN1-4 (matches the wiring note)
 const int BUTTON = 9;                 // BOOT button on the ESP32-C3 SuperMini
+const int LASER_PINS[2] = {3, 10};    // left, right line laser (NPN low-side)
+// 3 and 10 are the free non-strapping GPIOs left on the SuperMini; 20/21 are
+// UART0 and would fight a serial console if CDC were ever turned off.
 // Avoid GPIO 8 for a coil: it's a strapping pin (and the onboard LED on most
 // C3 SuperMinis), so driving it can interfere with boot. GPIO 2 and 9 are
 // also strapping pins — 9 is fine as the BOOT button (it has a pull-up).
@@ -103,6 +125,12 @@ const int   EXPOSURE_MS    = 1800;    // time for iPhone to capture + save
 const int   DOUBLE_MS      = 400;     // window to catch the second press
 const int   DRY_STEP_US    = 2500;    // ~10 s per revolution
 
+// Laser scans command one small move at a time, so there's no settle-and-shoot
+// timing here — the host waits for "ok", then for the camera to see a still
+// table. A scan sends something every second or so; a minute of silence means
+// the host is gone.
+const unsigned long HOST_IDLE_MS = 60000;
+
 // Never hand-count connections: iOS's HID pairing does connect → bond →
 // reconnect, so connect/disconnect callbacks don't reliably pair up and a
 // counter drifts. The server knows the truth — ask it.
@@ -148,6 +176,84 @@ void rotateSteps(long n, int us) {
   for (long i = 0; i < n; i++) stepOnce(us);
 }
 
+void setLasers(int mask) {
+  for (int i = 0; i < 2; i++) digitalWrite(LASER_PINS[i], (mask >> i) & 1);
+}
+
+// ── USB serial commands (laser scanning) ─────────────────────
+// Steps since the last PRELOAD. The host turns this into an angle using the
+// true 1:63.684 ratio (or its own calibrated degrees-per-step), not by
+// assuming STEPS_PER_REV divides evenly into its scan increments.
+long scanPos = 0;
+int laserMask = 0;
+bool hostHolding = false;              // coils energised on the host's behalf
+unsigned long lastHostMs = 0;
+
+void handleCommand(char* line) {
+  char* cmd = strtok(line, " \t\r");
+  char* arg = strtok(nullptr, " \t\r");
+  if (!cmd) return;
+  for (char* p = cmd; *p; p++) *p = toupper(*p);
+  lastHostMs = millis();
+
+  if (!strcmp(cmd, "PING")) {
+    Serial.println("ok scantable");
+  } else if (!strcmp(cmd, "INFO")) {
+    Serial.printf("ok steps_per_rev=%ld backlash=%ld\n", STEPS_PER_REV, BACKLASH_STEPS);
+  } else if (!strcmp(cmd, "PRELOAD")) {
+    // Same slack take-up as a photo scan, for the same reason: every move
+    // after this lands its full length. Only valid while the coils stay held.
+    rotateSteps(BACKLASH_STEPS, STEP_DELAY_US);
+    scanPos = 0;
+    hostHolding = true;
+    Serial.println("ok 0");
+  } else if (!strcmp(cmd, "STEP")) {
+    long n = arg ? atol(arg) : 0;
+    // Forward only: reversing would re-open the backlash PRELOAD just closed.
+    if (n < 1 || n > 2 * STEPS_PER_REV) { Serial.println("err step count"); return; }
+    rotateSteps(n, STEP_DELAY_US);
+    scanPos += n;
+    hostHolding = true;
+    Serial.printf("ok %ld\n", scanPos);
+  } else if (!strcmp(cmd, "LASER")) {
+    int m = arg ? atoi(arg) : -1;
+    if (m < 0 || m > 3) { Serial.println("err laser mask"); return; }
+    laserMask = m;
+    setLasers(laserMask);
+    Serial.printf("ok %d\n", laserMask);
+  } else if (!strcmp(cmd, "RELEASE")) {
+    laserMask = 0;
+    setLasers(0);
+    coilsOff();
+    hostHolding = false;
+    Serial.println("ok");
+  } else {
+    Serial.println("err unknown command");
+  }
+}
+
+void serviceSerial() {
+  static char buf[48];
+  static int len = 0;
+  while (Serial.available()) {
+    char c = Serial.read();
+    if (c == '\n') {
+      buf[len] = 0;
+      handleCommand(buf);
+      len = 0;
+    } else if (len < (int)sizeof(buf) - 1) {
+      buf[len++] = c;
+    }
+  }
+  // Fail safe: a host that vanished mid-scan leaves nothing lit or energised.
+  if ((laserMask || hostHolding) && millis() - lastHostMs > HOST_IDLE_MS) {
+    laserMask = 0;
+    setLasers(0);
+    coilsOff();
+    hostHolding = false;
+  }
+}
+
 void setup() {
   Serial.begin(115200);
   // The C3 SuperMini has NO USB-UART bridge — it's native USB, so `Serial`
@@ -158,8 +264,10 @@ void setup() {
   // bounded, since the rig must still run when nothing is plugged in.
   for (unsigned long t0 = millis(); !Serial && millis() - t0 < 2000; ) delay(10);
   for (int i = 0; i < 4; i++) pinMode(PINS[i], OUTPUT);
+  for (int i = 0; i < 2; i++) pinMode(LASER_PINS[i], OUTPUT);
   pinMode(BUTTON, INPUT_PULLUP);
   coilsOff();
+  setLasers(0);
 
   // The library stops advertising once a host connects, so for multiple phones
   // it has to be restarted. Do NOT restart it from these callbacks: they run in
@@ -231,6 +339,7 @@ void dryRun() {
 
 void loop() {
   keepAdvertising();
+  serviceSerial();
 
   int press = readButton();
   if (press == 0) { delay(20); return; }

@@ -15,3 +15,9 @@ photos-*/
 photos/
 scan/
 *.usdz
+
+# Laser scanner: per-rig calibration, local tools, printed board
+calib/
+bin/
+calib-board.svg
+__pycache__/

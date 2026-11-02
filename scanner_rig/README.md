@@ -418,3 +418,111 @@ Note: turntable scans defeat Object Capture's automatic background
 separation only if the background is textured. Use a plain featureless
 backdrop (paper sweep) so the only thing that appears to move is the
 object — this is what the plain platter and backdrop are for.
+
+## Laser scanner (alternative to photogrammetry)
+
+The same turntable can drive a laser-line scanner instead of the phone: a
+fixed webcam watches two vertical red laser lines on the object, and each image
+row becomes one 3D point by triangulation. The turntable angle comes from the
+step count, so nothing depends on background texture, and the scan comes out
+in **real millimetres**. The geometry should resolve roughly 0.1–0.3 mm on
+objects up to ~150 mm tall (estimated from the camera's 5.5 px/mm at 200 mm —
+not yet measured on the built rig). Shiny or very dark surfaces still need a
+matte coat.
+
+### Extra parts
+
+| Item | Qty | Notes |
+|---|---|---|
+| Logitech Brio 500/501 webcam | 1 | Verified: holds manual exposure + focus over UVC. A C920 also works (`--camera c920`) but needs its own cradle |
+| 650 nm red **line** laser module, 5 V, ~5 mW, 12 mm barrel | 2 | Line, not dot or cross. ~60°+ fan. Class 3R: never look into the beam |
+| 2N2222 (or any small NPN) + 1 kΩ resistor | 2 each | The ESP32's 3.3 V pins can't power a 5 V laser directly |
+| M4 x 12 self-tap screws | 4 | Mast into the base and head sockets |
+| M3 grub / self-tap screws | 2 | Laser locks |
+| Zip ties | 2 | Camera into its cradles |
+
+### Print (`laser_rig.scad`)
+
+| Part | File | Orientation |
+|---|---|---|
+| `base` | `stl/laser_base.stl` | as modelled, flat on the bed |
+| `mast` | `stl/laser_mast.stl` | lying on its side (pre-rotated) |
+| `head` | `stl/laser_head.stl` | as modelled, plate on the bed |
+
+All support-free. The base's two pockets ring two of the turntable's feet (no
+floor, so the turntable still stands on the desk); drop the turntable in and it
+is back in exactly the same place, so one calibration keeps working. Camera
+and both lasers sit on the one printed head, because their relative positions
+are what calibration measures — **after calibrating, don't bump or re-seat the
+camera or lasers**, or calibrate again.
+
+Measure your laser barrels before printing the head (`laser_d`, default 12).
+
+### Wiring
+
+```
+GPIO 3  ─ 1k ─ base  2N2222 (left laser)     emitter ─ GND
+GPIO 10 ─ 1k ─ base  2N2222 (right laser)    collector ─ laser (−)
+                                              laser (+) ─ 5V
+```
+
+"Left"/"right" are only labels — calibration measures each laser separately.
+
+### Firmware
+
+`turntable_shutter` now also takes commands over USB serial (button and
+Bluetooth photo modes are unchanged). It **must** be built with
+**Tools → USB CDC On Boot: Enabled** (`--fqbn esp32:esp32:esp32c3:CDCOnBoot=cdc`
+with arduino-cli), or the Mac can't talk to it. Lasers and coils switch off by
+themselves if the Mac goes quiet for a minute.
+
+### Software setup (once)
+
+`laser_scan.py` (repo root) runs under `uv`, which installs its Python packages
+on first run. It also needs **uvc-util** to lock the camera's exposure and
+focus — OpenCV can't on macOS:
+
+```sh
+git clone https://github.com/jtfrey/uvc-util.git /tmp/uvc-util
+git -C /tmp/uvc-util checkout 8110da7025c95eea3096a7181af9a46c0cc7ac37
+mkdir -p bin && clang -fno-objc-arc -O2 -w -framework IOKit -framework Foundation \
+  -o bin/uvc-util /tmp/uvc-util/src/*.m
+```
+
+(`-fno-objc-arc` matters: the source does its own memory management.)
+
+Run every `laser_scan.py` command from **Terminal.app** and allow it camera
+access when macOS asks — other apps' terminals may never get the prompt.
+
+### Calibrate (once per rig; again if anything moves or focus changes)
+
+1. `./laser_scan.py board` → `calib-board.svg`. Print at **100 %**, check the
+   100 mm bar, and glue it flat to stiff card or foam board.
+2. `./laser_scan.py preview` — put an object on the platter, turn the lasers on
+   (`1`/`2`/`3`), rotate each laser in its sleeve until its line is vertical,
+   then lock it. Set focus (`f`/`F`) so the object is sharp and exposure
+   (`e`/`E`) so the laser line is bright but the "saturated px" count stays
+   low. `s` saves.
+3. `./laser_scan.py intrinsics` — hold the board 15–35 cm from the camera and
+   press space at 15–25 different positions and tilts, covering the corners of
+   the frame. `c` calibrates; aim for under 0.5 px.
+4. `./laser_scan.py calibrate` — stand the board upright on the platter,
+   facing the camera, 3–6 cm off centre. The table makes one revolution; the
+   script fits the turntable axis, both laser planes and the real
+   degrees-per-step. It reports the axis distance from the lens (should be
+   near 200 mm) and each plane's fit error (aim for under 0.1 mm).
+
+### Scan
+
+```sh
+./laser_scan.py scan mug                  # -> scan/mug.ply, scan/mug.npz, scan/mug.stl
+./laser_scan.py scan mug --step-deg 0.35  # finer, twice as long
+./laser_scan.py mesh scan/mug.npz         # re-mesh later (e.g. --depth 10)
+```
+
+A 0.7° scan is ~514 positions; expect roughly 5 minutes (estimated, ~0.5 s
+per position for three camera frames). The `.ply` is the
+coloured point cloud for inspection; the `.stl` is a closed mesh in mm, with the
+platter removed and the base closed flat — ready to slice, no scaling needed.
+Occluded pockets the lasers never reached are bridged smoothly; for those,
+scan again with the object lying on a different side.

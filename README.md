@@ -73,6 +73,13 @@ verified library versions are in
 - Lots of overlapping photos from several heights (the cradle's tilt stops).
 - Include a ruler in a couple of shots so you can scale the model correctly.
 
+## Laser scanning (alternative)
+
+The same turntable can also drive a laser-line scanner — a webcam, two line
+lasers and `laser_scan.py` — that measures in real millimetres and needs no
+photogrammetry. See **Laser scanner** in
+[`scanner_rig/README.md`](scanner_rig/README.md).
+
 ## License
 
 MIT — see [`LICENSE`](LICENSE).

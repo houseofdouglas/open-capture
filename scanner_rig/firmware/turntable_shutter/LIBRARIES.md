@@ -13,6 +13,8 @@ builds (verified: `arduino-cli compile --fqbn esp32:esp32:esp32c3`, exit 0).
 | ESP32-NimBLE-Keyboard (fork) | commit **1f3a88a** | https://github.com/wakwak-koba/ESP32-NimBLE-Keyboard |
 
 Board in Arduino IDE: **ESP32C3 Dev Module** (FQBN `esp32:esp32:esp32c3`).
+For the laser scanner's USB serial commands, also set **USB CDC On Boot:
+Enabled** (`esp32:esp32:esp32c3:CDCOnBoot=cdc`; verified with core 3.3.12).
 
 ## Why not the usual library
 
